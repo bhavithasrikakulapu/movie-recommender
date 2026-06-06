@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+data/raw/
+data/processed/
+results/
+monitoring/monitor.log
+.env
+*.egg-info/
+dist/
+.pytest_cache/

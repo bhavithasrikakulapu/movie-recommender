@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download & preprocess data
+        run: |
+          cd data
+          python download_data.py
+          python preprocess.py
+
+      - name: Train models
+        run: python models/train.py
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-metrics
+          path: results/
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t movie-recommender:latest .
+
+      - name: Smoke test Docker image
+        run: |
+          # Download data and train first (in CI they were artifacts)
+          pip install -r requirements.txt
+          cd data && python download_data.py && python preprocess.py && cd ..
+          python models/train.py
+          docker build -t movie-recommender:latest .
+          docker run -d -p 8000:8000 --name api \
+            -v $(pwd)/models:/app/models \
+            -v $(pwd)/data:/app/data \
+            -v $(pwd)/results:/app/results \
+            movie-recommender:latest
+          sleep 15
+          curl -f http://localhost:8000/health
+          docker stop api
